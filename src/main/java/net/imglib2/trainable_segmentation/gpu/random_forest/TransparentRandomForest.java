@@ -2,6 +2,7 @@
 package net.imglib2.trainable_segmentation.gpu.random_forest;
 
 import hr.irb.fastRandomForest.FastRandomForest;
+import java.util.function.Consumer;
 import net.imglib2.util.Cast;
 import weka.core.Instance;
 
@@ -38,6 +39,11 @@ public class TransparentRandomForest {
 
 	public List<TransparentRandomTree> trees() {
 		return trees;
+	}
+
+	public void forEachNode( Consumer< TransparentRandomTree > visitor )
+	{
+		trees.forEach( tree -> tree.forEachNode( visitor ) );
 	}
 
 	public int numberOfClasses() {
