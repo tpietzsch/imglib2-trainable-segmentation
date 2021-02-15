@@ -129,6 +129,7 @@ public class RFPrediction_1
 				final float attributeValue = instance[ attributeIndex ];
 				final float threshold = dataTrees[ o + 1 ];
 				final int branch = attributeValue < threshold ? 0 : 1;
+				nodeIndex = ( nodeIndex << 1 ) + branch + 1;
 				branchBits = ( branchBits << 1 ) + branch;
 			}
 		}
@@ -154,13 +155,17 @@ public class RFPrediction_1
 			//   index in probabilities = branchBits * numClasses + base_offset?
 			//   base_offset = numClasses * maxLeafs * treeIndex
 //				node.classProbabilities(); // double[]
-			if ( depth < maxDepth )
+			final int b;
+			if ( depth <= maxDepth )
 			{
 				// mark as leaf by setting feature index to -1 or something
 				final int o = dataBase + nodeIndex * 2;
 				dataTrees[ o ] = -1;
+				b = branchBits << ( maxDepth - depth );
 			}
-			final int o = probBase + ( branchBits << ( maxDepth - depth ) ) * numClasses;
+			else
+				b = branchBits;
+			final int o = probBase + b * numClasses;
 			for ( int i = 0; i < numClasses; ++i )
 				probabilities[ o + i ] = ( float ) node.classProbabilities()[ i ];
 		}
