@@ -14,9 +14,8 @@ import net.imglib2.img.array.ArrayImgFactory;
 import net.imglib2.trainable_segmentation.gpu.api.GpuCopy;
 import net.imglib2.trainable_segmentation.gpu.api.GpuPool;
 import net.imglib2.trainable_segmentation.gpu.random_forest.RFAnalysis;
-import net.imglib2.trainable_segmentation.gpu.random_forest.RFAnalysis.RFPrediction;
+import net.imglib2.trainable_segmentation.gpu.random_forest.RFPrediction_1;
 import net.imglib2.trainable_segmentation.gpu.random_forest.RandomForestPrediction;
-import net.imglib2.trainable_segmentation.gpu.random_forest.TransparentRandomForest;
 import net.imglib2.trainable_segmentation.pixel_feature.calculator.FeatureCalculator;
 import net.imglib2.trainable_segmentation.pixel_feature.settings.FeatureSettings;
 import net.imglib2.trainable_segmentation.RevampUtils;
@@ -51,7 +50,7 @@ public class Segmenter {
 	private final weka.classifiers.Classifier classifier;
 
 	private RandomForestPrediction predicition;
-	private RFPrediction predicition2;
+	private RFAnalysis.RFPrediction predicition2;
 
 	private boolean useGpu = false;
 
@@ -62,7 +61,7 @@ public class Segmenter {
 		this.features = Objects.requireNonNull(features);
 		this.classifier = Objects.requireNonNull(classifier);
 		this.predicition = new RandomForestPrediction( Cast.unchecked( classifier ), features.count() );
-		this.predicition2 = new RFPrediction( ( FastRandomForest ) classifier, features.count() );
+		this.predicition2 = new RFAnalysis.RFPrediction( ( FastRandomForest ) classifier, features.count() );
 	}
 
 	public Segmenter(Context context, List<String> classNames, FeatureSettings features,
@@ -128,7 +127,7 @@ public class Segmenter {
 		RandomAccessibleInterval<FloatType> featureValues = features.apply(image, out);
 //		RandomForestPrediction forest = new RandomForestPrediction((FastRandomForest) classifier,
 //			features.count());
-		predicition.segment(featureValues, out);
+		predicition2.segment(featureValues, out);
 	}
 
 	private void segmentGpu(RandomAccessible<?> image,
@@ -238,7 +237,7 @@ public class Segmenter {
 		public void train() {
 			RevampUtils.wrapException(() -> classifier.buildClassifier(instances));
 			predicition = new RandomForestPrediction( ( FastRandomForest ) classifier, features.count() );
-			predicition2 = new RFPrediction( ( FastRandomForest ) classifier, features.count() );
+			predicition2 = new RFAnalysis.RFPrediction( ( FastRandomForest ) classifier, features.count() );
 		}
 	}
 

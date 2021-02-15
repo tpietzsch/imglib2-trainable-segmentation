@@ -1,26 +1,30 @@
 package net.imglib2.trainable_segmentation.gpu.random_forest;
 
+import Jama.Matrix;
 import hr.irb.fastRandomForest.FastRandomForest;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.trainable_segmentation.utils.views.FastViews;
 import net.imglib2.type.numeric.IntegerType;
 import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.real.FloatType;
+import net.imglib2.util.BenchmarkHelper;
 import net.imglib2.util.StopWatch;
 import net.imglib2.view.composite.Composite;
 import preview.net.imglib2.loops.LoopBuilder;
 
 public class RFAnalysis
 {
-	public static void analyze( final FastRandomForest classifier, final int numberOfFeatures )
+	public static RFPrediction analyze( final FastRandomForest classifier, final int numberOfFeatures )
 	{
 		final TransparentRandomForest forest = new TransparentRandomForest( classifier );
 
@@ -81,7 +85,7 @@ public class RFAnalysis
 		System.out.println( "probs.size() = " + probs.size() );
 		System.out.println();
 
-		new RFPrediction( forest, numberOfFeatures );
+		return new RFPrediction( forest, numberOfFeatures );
 	}
 
 
@@ -99,24 +103,48 @@ public class RFAnalysis
 
 		private final int numClasses;
 
+		// TODO at index i contains numbers of trees of/up to height i + 1
+		private final int[] numTreesUpToHeight;
+
 		public RFPrediction( FastRandomForest classifier, int numberOfFeatures )
 		{
 			this( new TransparentRandomForest( classifier ), numberOfFeatures );
 		}
+
 		public RFPrediction( final TransparentRandomForest forest, int numberOfFeatures )
 		{
 			numClasses = forest.numberOfClasses();
 			numTrees = forest.trees().size();
 			numFeatures = numberOfFeatures;
-			final int maxHeight = forest.trees().stream().mapToInt( TransparentRandomTree::height ).max().orElse( 0 );
+
+
+			final Map< Integer, List< TransparentRandomTree > > treesByHeight = new HashMap<>();
+			for ( TransparentRandomTree tree : forest.trees() )
+				treesByHeight.computeIfAbsent( tree.height(), ArrayList::new ).add( tree );
+			final int[] heights = treesByHeight.keySet().stream().mapToInt( Integer::intValue ).sorted().toArray();
+			for ( int i : heights )
+				System.out.println( "trees with height " + i + ": " + treesByHeight.get( i ).size() );
+			System.out.println();
+
+			final int maxHeight = heights.length == 0 ? 0 : heights[ heights.length - 1 ];
 			final int maxLeafs = 1 << maxHeight;
 			final int maxNonLeafs = maxLeafs - 1;
 
 			dataTrees = new float[ 2 * maxNonLeafs * numTrees ];
 			probabilities = new float[ numClasses * maxLeafs * numTrees ];
 
-			for ( int iTree = 0; iTree < numTrees; ++iTree )
-				write( forest.trees().get( iTree ), iTree, 0, 0, 0, maxHeight - 1 );
+			// TODO at index i contains numbers of trees of/up to height i + 1
+			numTreesUpToHeight = new int[ 1 ];
+			for ( int i = 0; i < numTreesUpToHeight.length; ++i )
+				numTreesUpToHeight[ i ] = treesByHeight.getOrDefault( i + 1, Collections.emptyList() ).size();
+
+			int iTreeBase = 0;
+			for ( int height : heights )
+			{
+				final List< TransparentRandomTree > trees = treesByHeight.get( height );
+				for ( TransparentRandomTree tree : trees )
+					write( tree, iTreeBase++, 0, 0, 0, maxHeight - 1 );
+			}
 		}
 
 		/**
@@ -131,18 +159,18 @@ public class RFAnalysis
 		public void segment( RandomAccessibleInterval< FloatType > featureStack,
 				RandomAccessibleInterval<? extends IntegerType<?> > out)
 		{
-			StopWatch watch = StopWatch.createAndStart();
-			LoopBuilder.setImages( FastViews.collapse(featureStack), out).forEachChunk(chunk -> {
-				float[] features = new float[ numFeatures ];
-				float[] probabilities = new float[numClasses];
-				chunk.forEachPixel((featureVector, classIndex) -> {
-					copyFromTo(featureVector, features);
-					distributionForInstance(features, probabilities);
-					classIndex.setInteger(ArrayUtils.findMax(probabilities));
-				});
-				return null;
-			});
-			System.out.println("(t) segment runtime " + watch);
+			BenchmarkHelper.benchmarkAndPrint( 20, true, () -> {
+				LoopBuilder.setImages( FastViews.collapse( featureStack ), out ).forEachChunk( chunk -> {
+					float[] features = new float[ numFeatures ];
+					float[] probabilities = new float[ numClasses ];
+					chunk.forEachPixel( ( featureVector, classIndex ) -> {
+						copyFromTo( featureVector, features );
+						distributionForInstance( features, probabilities );
+						classIndex.setInteger( ArrayUtils.findMax( probabilities ) );
+					} );
+					return null;
+				} );
+			} );
 		}
 
 		private static void copyFromTo( final Composite< FloatType > input, final float[] output )
@@ -170,8 +198,15 @@ public class RFAnalysis
 
 			Arrays.fill( distribution, 0 );
 //			for ( int tree = 0, n = numTrees; tree < n; tree++ )
-			for ( int tree = 0; tree < numTrees; ++tree )
+			// TODO: test influence of assigning loop max to local variables
+			final int nh1 = numTreesUpToHeight[ 0 ];
+			final int nhmax = this.numTrees;
+			for ( int tree = 0; tree < nh1; ++tree )
+				addDistributionForTree_h1( instance, tree, distribution );
+			for ( int tree = nh1; tree < nhmax; ++tree )
 				addDistributionForTree( instance, tree, distribution, maxDepth );
+//			for ( int tree = 0; tree < numTrees; ++tree )
+//				addDistributionForTree( instance, tree, distribution, maxDepth );
 			ArrayUtils.normalize( distribution );
 		}
 
@@ -208,6 +243,29 @@ public class RFAnalysis
 			final int o = probBase + branchBits * numClasses;
 			for ( int k = 0; k < numClasses; k++ )
 				distribution[ k ] += probabilities[ o + k ];
+		}
+
+		private void addDistributionForTree_h1(
+				final float[] instance,
+				final int treeIndex,
+				final float[] distribution )
+		{
+			final int maxDepth = 3; // TODO
+			final int maxLeafs = 2 << maxDepth;
+			final int maxNonLeafs = maxLeafs - 1;
+			final int dataBase = treeIndex * maxNonLeafs * 2;
+			final int probBase = treeIndex * maxLeafs * numClasses;
+
+			final int o = dataBase;
+			final int attributeIndex = ( int ) dataTrees[ o ];
+			final float attributeValue = instance[ attributeIndex ];
+			final float threshold = dataTrees[ o + 1 ];
+			if( attributeValue < threshold )
+			{
+				final int p = probBase + ( attributeValue < threshold ? 0 : numClasses << maxDepth );
+				for ( int k = 0; k < numClasses; k++ )
+					distribution[ k ] += probabilities[ p + k ];
+			}
 		}
 
 		private void write( TransparentRandomTree node, final int treeIndex, final int nodeIndex, final int branchBits, final int depth, final int maxDepth )
