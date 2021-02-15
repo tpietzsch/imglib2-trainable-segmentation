@@ -160,6 +160,7 @@ public class RFAnalysis
 				RandomAccessibleInterval<? extends IntegerType<?> > out)
 		{
 			BenchmarkHelper.benchmarkAndPrint( 20, true, () -> {
+//				StopWatch watch = StopWatch.createAndStart();
 				LoopBuilder.setImages( FastViews.collapse( featureStack ), out ).forEachChunk( chunk -> {
 					float[] features = new float[ numFeatures ];
 					float[] probabilities = new float[ numClasses ];
@@ -170,6 +171,7 @@ public class RFAnalysis
 					} );
 					return null;
 				} );
+//				System.out.println( "(t) segment runtime " + watch );
 			} );
 		}
 
@@ -195,16 +197,29 @@ public class RFAnalysis
 				float[] distribution )
 		{
 			final int maxDepth = 3; // TODO
+			final int numClasses = this.numClasses;
 
 			Arrays.fill( distribution, 0 );
-//			for ( int tree = 0, n = numTrees; tree < n; tree++ )
-			// TODO: test influence of assigning loop max to local variables
 			final int nh1 = numTreesUpToHeight[ 0 ];
 			final int nhmax = this.numTrees;
+			final int maxLeafs = 2 << maxDepth;
+			final int maxNonLeafs = maxLeafs - 1;
+			final int dataSize = maxNonLeafs * 2;
+			final int probSize = maxLeafs * numClasses;
+			int dataBase = 0;
+			int probBase = 0;
 			for ( int tree = 0; tree < nh1; ++tree )
-				addDistributionForTree_h1( instance, tree, distribution );
+			{
+				addDistributionForTree_h1( instance, distribution, dataBase, probBase, maxDepth, numClasses );
+				dataBase += dataSize;
+				probBase += probSize;
+			}
 			for ( int tree = nh1; tree < nhmax; ++tree )
-				addDistributionForTree( instance, tree, distribution, maxDepth );
+			{
+				addDistributionForTree( instance, distribution, dataBase, probBase, maxDepth, numClasses );
+				dataBase += dataSize;
+				probBase += probSize;
+			}
 //			for ( int tree = 0; tree < numTrees; ++tree )
 //				addDistributionForTree( instance, tree, distribution, maxDepth );
 			ArrayUtils.normalize( distribution );
@@ -212,15 +227,12 @@ public class RFAnalysis
 
 		private void addDistributionForTree(
 				final float[] instance,
-				final int treeIndex,
 				final float[] distribution,
-				final int maxDepth )
+				final int dataBase,
+				final int probBase,
+				final int maxDepth,
+				final int numClasses )
 		{
-			final int maxLeafs = 2 << maxDepth;
-			final int maxNonLeafs = maxLeafs - 1;
-			final int dataBase = treeIndex * maxNonLeafs * 2;
-			final int probBase = treeIndex * maxLeafs * numClasses;
-
 			int branchBits = 0;
 			for ( int nodeIndex = 0, depth = 0; depth <= maxDepth; ++depth )
 			{
@@ -247,19 +259,15 @@ public class RFAnalysis
 
 		private void addDistributionForTree_h1(
 				final float[] instance,
-				final int treeIndex,
-				final float[] distribution )
+				final float[] distribution,
+				final int dataBase,
+				final int probBase,
+				final int maxDepth,
+				final int numClasses )
 		{
-			final int maxDepth = 3; // TODO
-			final int maxLeafs = 2 << maxDepth;
-			final int maxNonLeafs = maxLeafs - 1;
-			final int dataBase = treeIndex * maxNonLeafs * 2;
-			final int probBase = treeIndex * maxLeafs * numClasses;
-
-			final int o = dataBase;
-			final int attributeIndex = ( int ) dataTrees[ o ];
+			final int attributeIndex = ( int ) dataTrees[ dataBase ];
 			final float attributeValue = instance[ attributeIndex ];
-			final float threshold = dataTrees[ o + 1 ];
+			final float threshold = dataTrees[ dataBase + 1 ];
 			if( attributeValue < threshold )
 			{
 				final int p = probBase + ( attributeValue < threshold ? 0 : numClasses << maxDepth );
