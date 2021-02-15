@@ -2,6 +2,7 @@
 package net.imglib2.trainable_segmentation.gpu.random_forest;
 
 import hr.irb.fastRandomForest.FastRandomForest;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.haesleinhuepf.clij.coremem.enums.NativeTypeEnum;
 import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.img.Img;
@@ -13,6 +14,7 @@ import net.imglib2.type.numeric.IntegerType;
 import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.integer.UnsignedShortType;
 import net.imglib2.type.numeric.real.FloatType;
+import net.imglib2.util.BenchmarkHelper;
 import net.imglib2.util.StopWatch;
 import net.imglib2.view.Views;
 import net.imglib2.view.composite.Composite;
@@ -88,7 +90,7 @@ public class RandomForestPrediction {
 	/**
 	 * Applies the random forest to each pixel of the featureStack. Writes the class
 	 * probabilities to the output image.
-	 * 
+	 *
 	 * @param gpu
 	 * @param featureStack Input image. Number of channels must equal
 	 *          {@link #numberOfFeatures()}.
@@ -114,7 +116,7 @@ public class RandomForestPrediction {
 	/**
 	 * Applies the random forest to each pixel in the feature stack. Write the index
 	 * of the class with the highest probability into the output image.
-	 * 
+	 *
 	 * @param gpu
 	 * @param featureStack Input image. Number of channels must equal
 	 *          {@link #numberOfFeatures()}.
@@ -133,7 +135,7 @@ public class RandomForestPrediction {
 	/**
 	 * Applies the random forest to each pixel in the feature stack. Write the index
 	 * of the class with the highest probability into the output image.
-	 * 
+	 *
 	 * @param featureStack Input image. Axis order should be XYZC of XYC. Number of
 	 *          channels must equal {@link #numberOfFeatures()}.
 	 * @param out Output image. Axis order should be XYZ or XY. Pixel values will be
@@ -142,24 +144,32 @@ public class RandomForestPrediction {
 	public void segment(RandomAccessibleInterval<FloatType> featureStack,
 		RandomAccessibleInterval<? extends IntegerType<?>> out)
 	{
+//		BenchmarkHelper.benchmarkAndPrint( 20, true, () -> {
 		StopWatch watch = StopWatch.createAndStart();
+		AtomicInteger ii = new AtomicInteger();
 		LoopBuilder.setImages(FastViews.collapse(featureStack), out).forEachChunk(chunk -> {
 			float[] features = new float[numberOfFeatures];
 			float[] probabilities = new float[numberOfClasses];
 			chunk.forEachPixel((featureVector, classIndex) -> {
 				copyFromTo(featureVector, features);
 				distributionForInstance(features, probabilities);
+				final int i = ii.getAndIncrement();
+				if ( i < 10 )
+				{
+					System.out.println( "i = " + i + ": " + Arrays.toString( probabilities ) + " : " + Arrays.toString( features ) );
+				}
 				classIndex.setInteger(ArrayUtils.findMax(probabilities));
 			});
 			return null;
 		});
 		System.out.println("segment runtime " + watch);
+//		} );
 	}
 
 	/**
 	 * Applies the random forest for each pixel in the feature stack. Writes the
 	 * class probabilities into the output image.
-	 * 
+	 *
 	 * @param featureStack Image with axis order XYZC or XYC. Where the channel axes
 	 *          length equals {@link #numberOfFeatures()}.
 	 * @param out Output image axis order must match the input image. Channel axes
@@ -193,7 +203,7 @@ public class RandomForestPrediction {
 	/**
 	 * Applies the random forest to the given instance. Writes the class
 	 * probabilities to the parameter called distribution.
-	 * 
+	 *
 	 * @param instance Instance / feature vector, must be an array of length
 	 *          {@link #numberOfFeatures}.
 	 * @param distribution This is the output buffer, array length mush equal

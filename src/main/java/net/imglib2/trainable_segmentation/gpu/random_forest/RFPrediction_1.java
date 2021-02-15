@@ -1,7 +1,12 @@
 package net.imglib2.trainable_segmentation.gpu.random_forest;
 
 import hr.irb.fastRandomForest.FastRandomForest;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.loops.LoopBuilder;
 import net.imglib2.trainable_segmentation.utils.views.FastViews;
@@ -34,15 +39,33 @@ public class RFPrediction_1
 		numClasses = forest.numberOfClasses();
 		numTrees = forest.trees().size();
 		numFeatures = numberOfFeatures;
-		final int maxHeight = forest.trees().stream().mapToInt( TransparentRandomTree::height ).max().orElse( 0 );
+
+		final Map< Integer, List< TransparentRandomTree > > treesByHeight = new HashMap<>();
+		for ( TransparentRandomTree tree : forest.trees() )
+			treesByHeight.computeIfAbsent( tree.height(), ArrayList::new ).add( tree );
+		final int[] heights = treesByHeight.keySet().stream().mapToInt( Integer::intValue ).sorted().toArray();
+		for ( int i : heights )
+			System.out.println( "trees with height " + i + ": " + treesByHeight.get( i ).size() );
+		System.out.println();
+
+		final int maxHeight = heights.length == 0 ? 0 : heights[ heights.length - 1 ];
+//		final int maxHeight = forest.trees().stream().mapToInt( TransparentRandomTree::height ).max().orElse( 0 );
 		final int maxLeafs = 1 << maxHeight;
 		final int maxNonLeafs = maxLeafs - 1;
 
 		dataTrees = new float[ 2 * maxNonLeafs * numTrees ];
 		probabilities = new float[ numClasses * maxLeafs * numTrees ];
 
-		for ( int iTree = 0; iTree < numTrees; ++iTree )
-			write( forest.trees().get( iTree ), iTree, 0, 0, 0, maxHeight - 1 );
+		int iTree = 0;
+		for ( int height : heights )
+		{
+			final List< TransparentRandomTree > trees = treesByHeight.get( height );
+			for ( TransparentRandomTree tree : trees )
+				write( tree, iTree++, 0, 0, 0, maxHeight - 1 );
+		}
+
+//		for ( int iTree = 0; iTree < numTrees; ++iTree )
+//			write( forest.trees().get( iTree ), iTree, 0, 0, 0, maxHeight - 1 );
 	}
 
 	/**
@@ -60,12 +83,18 @@ public class RFPrediction_1
 			RandomAccessibleInterval< ? extends IntegerType< ? > > out )
 	{
 		StopWatch watch = StopWatch.createAndStart();
+		AtomicInteger ii = new AtomicInteger();
 		LoopBuilder.setImages( FastViews.collapse( featureStack ), out ).forEachChunk( chunk -> {
 			float[] features = new float[ numFeatures ];
 			float[] probabilities = new float[ numClasses ];
 			chunk.forEachPixel( ( featureVector, classIndex ) -> {
 				copyFromTo( featureVector, features );
 				distributionForInstance( features, probabilities );
+				final int i = ii.getAndIncrement();
+				if ( i < 10 )
+				{
+					System.out.println( "i = " + i + ": " + Arrays.toString( probabilities ) + " : " + Arrays.toString( features ) );
+				}
 				classIndex.setInteger( ArrayUtils.findMax( probabilities ) );
 			} );
 			return null;

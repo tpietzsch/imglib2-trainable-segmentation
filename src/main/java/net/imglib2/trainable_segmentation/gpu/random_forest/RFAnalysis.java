@@ -156,7 +156,7 @@ public class RFAnalysis
 				final List< TransparentRandomTree > trees = treesByHeight.get( height );
 				for ( TransparentRandomTree tree : trees )
 				{
-					write( tree, 0, 0, 0, height, dataBase, probBase );
+					write( tree, 0, 0, 0, height - 1, dataBase, probBase );
 					dataBase += dataSize;
 					probBase += probSize;
 				}
@@ -228,29 +228,29 @@ public class RFAnalysis
 				if ( nh == 0 )
 					continue;
 
-				if ( depth == 0 ) // special case for trees of height 1
-				{
-					final int dataSize = 2;
-					final int probSize = 2 * numClasses;
-					for ( int tree = 0; tree < nh; ++tree )
-					{
-						addDistributionForTree_h1( instance, distribution, dataBase, probBase, numClasses );
-						dataBase += dataSize;
-						probBase += probSize;
-					}
-				}
-				else if ( depth == 1 ) // special case for trees of height 2
-				{
-					final int dataSize = 6;
-					final int probSize = 4 * numClasses;
-					for ( int tree = 0; tree < nh; ++tree )
-					{
-						addDistributionForTree_h2( instance, distribution, dataBase, probBase, numClasses );
-						dataBase += dataSize;
-						probBase += probSize;
-					}
-				}
-				else // general case
+//				if ( depth == 0 ) // special case for trees of height 1
+//				{
+//					final int dataSize = 2;
+//					final int probSize = 2 * numClasses;
+//					for ( int tree = 0; tree < nh; ++tree )
+//					{
+//						addDistributionForTree_h1( instance, distribution, dataBase, probBase, numClasses );
+//						dataBase += dataSize;
+//						probBase += probSize;
+//					}
+//				}
+//				else if ( depth == 1 ) // special case for trees of height 2
+//				{
+//					final int dataSize = 6;
+//					final int probSize = 4 * numClasses;
+//					for ( int tree = 0; tree < nh; ++tree )
+//					{
+//						addDistributionForTree_h2( instance, distribution, dataBase, probBase, numClasses );
+//						dataBase += dataSize;
+//						probBase += probSize;
+//					}
+//				}
+//				else // general case
 				{
 					final int numLeafs = 2 << depth;
 					final int numNonLeafs = numLeafs - 1;
@@ -282,7 +282,7 @@ public class RFAnalysis
 				final int attributeIndex = ( int ) dataTrees[ o ];
 				if ( attributeIndex < 0 )
 				{
-					branchBits = branchBits << ( maxDepth - depth + 1 );
+					branchBits = branchBits << ( maxDepth - depth );
 					break;
 				}
 				else
@@ -355,14 +355,18 @@ public class RFAnalysis
 				//   if ( depth < maxDepth ) fill branchBits with zeros
 				//   index in probabilities = branchBits * numClasses + base_offset?
 				//   base_offset = numClasses * maxLeafs * treeIndex
-//				node.classProbabilities(); // double[]
-				if ( depth < maxDepth )
+//					node.classProbabilities(); // double[]
+				final int b;
+				if ( depth <= maxDepth )
 				{
 					// mark as leaf by setting feature index to -1 or something
 					final int o = treeDataBase + nodeIndex * 2;
-					dataTrees[ o ] = -100;
+					dataTrees[ o ] = -1;
+					b = branchBits << ( maxDepth - depth );
 				}
-				final int o = treeProbBase + ( branchBits << ( maxDepth - depth ) ) * numClasses;
+				else
+					b = branchBits;
+				final int o = treeProbBase + b * numClasses;
 				for ( int i = 0; i < numClasses; ++i )
 					probabilities[ o + i ] = ( float ) node.classProbabilities()[ i ];
 			}
