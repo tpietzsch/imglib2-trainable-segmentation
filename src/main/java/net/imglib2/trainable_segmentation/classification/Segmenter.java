@@ -127,7 +127,7 @@ public class Segmenter {
 		RandomAccessibleInterval<FloatType> featureValues = features.apply(image, out);
 //		RandomForestPrediction forest = new RandomForestPrediction((FastRandomForest) classifier,
 //			features.count());
-		predicition2.segment(featureValues, out);
+		predicition.segment(featureValues, out);
 	}
 
 	private void segmentGpu(RandomAccessible<?> image,
