@@ -14,7 +14,6 @@ import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.trainable_segmentation.utils.views.FastViews;
 import net.imglib2.type.numeric.IntegerType;
 import net.imglib2.type.numeric.real.FloatType;
-import net.imglib2.util.BenchmarkHelper;
 import net.imglib2.util.StopWatch;
 import net.imglib2.view.composite.Composite;
 import preview.net.imglib2.loops.LoopBuilder;
@@ -120,9 +119,6 @@ public class RFAnalysis
 			for ( TransparentRandomTree tree : forest.trees() )
 				treesByHeight.computeIfAbsent( tree.height(), ArrayList::new ).add( tree );
 			final int[] heights = treesByHeight.keySet().stream().mapToInt( Integer::intValue ).sorted().toArray();
-			for ( int i : heights )
-				System.out.println( "trees with height " + i + ": " + treesByHeight.get( i ).size() );
-			System.out.println();
 
 			final int maxHeight = heights.length == 0 ? 0 : heights[ heights.length - 1 ];
 			numTreesUpToHeight = new int[ maxHeight ];
@@ -140,8 +136,6 @@ public class RFAnalysis
 			attributes = new short[ totalDataSize ];
 			thresholds = new float[ totalDataSize ];
 			probabilities = new float[ totalProbSize ];
-			System.out.println( "thresholds.length = " + thresholds.length );
-			System.out.println( "probabilities.length = " + probabilities.length );
 
 			int dataBase = 0;
 			int probBase = 0;
@@ -174,8 +168,8 @@ public class RFAnalysis
 		public void segment( RandomAccessibleInterval< FloatType > featureStack,
 				RandomAccessibleInterval<? extends IntegerType<?> > out)
 		{
-			BenchmarkHelper.benchmarkAndPrint( 20, false, () -> {
-//				StopWatch watch = StopWatch.createAndStart();
+//			BenchmarkHelper.benchmarkAndPrint( 20, false, () -> {
+				StopWatch watch = StopWatch.createAndStart();
 //				AtomicInteger ii = new AtomicInteger();
 				LoopBuilder.setImages( FastViews.collapse( featureStack ), out ).forEachChunk( chunk -> {
 					float[] features = new float[ numFeatures ];
@@ -183,6 +177,7 @@ public class RFAnalysis
 					chunk.forEachPixel( ( featureVector, classIndex ) -> {
 						copyFromTo( featureVector, features );
 						distributionForInstance( features, probabilities );
+//						distributionForInstance_DUMMY( features, probabilities );
 //						final int i = ii.getAndIncrement();
 //						if ( i < 3 )
 //						{
@@ -192,8 +187,8 @@ public class RFAnalysis
 					} );
 					return null;
 				} );
-//				System.out.println( "(t) segment runtime " + watch );
-			} );
+				System.out.println( "(t) segment runtime " + watch );
+//			} );
 		}
 
 		private static void copyFromTo( final Composite< FloatType > input, final float[] output )
@@ -207,8 +202,11 @@ public class RFAnalysis
 				float[] distribution )
 		{
 			Arrays.fill( distribution, 0 );
-			distribution[ 0 ] = instance[ 0 ];
-			distribution[ 1 ] = instance[ 1 ];
+			for ( int i = 0; i < numFeatures; i+=2 )
+				distribution[ 0 ] += instance[ i ];
+			for ( int i = 1; i < numFeatures; i+=2 )
+				distribution[ 1 ] += instance[ i ];
+			ArrayUtils.normalize( distribution );
 		}
 
 		/**
@@ -302,7 +300,6 @@ public class RFAnalysis
 			for ( int k = 0; k < numClasses; k++ )
 				distribution[ k ] += probabilities[ probBase + branchBits * numClasses + k ];
 		}
-
 
 		public void distributionForInstance_c2(
 				float[] instance,

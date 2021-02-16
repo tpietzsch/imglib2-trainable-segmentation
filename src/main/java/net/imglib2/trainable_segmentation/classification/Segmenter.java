@@ -14,7 +14,6 @@ import net.imglib2.img.array.ArrayImgFactory;
 import net.imglib2.trainable_segmentation.gpu.api.GpuCopy;
 import net.imglib2.trainable_segmentation.gpu.api.GpuPool;
 import net.imglib2.trainable_segmentation.gpu.random_forest.RFAnalysis;
-import net.imglib2.trainable_segmentation.gpu.random_forest.RFPrediction_1;
 import net.imglib2.trainable_segmentation.gpu.random_forest.RandomForestPrediction;
 import net.imglib2.trainable_segmentation.pixel_feature.calculator.FeatureCalculator;
 import net.imglib2.trainable_segmentation.pixel_feature.settings.FeatureSettings;
@@ -127,7 +126,7 @@ public class Segmenter {
 		RandomAccessibleInterval<FloatType> featureValues = features.apply(image, out);
 //		RandomForestPrediction forest = new RandomForestPrediction((FastRandomForest) classifier,
 //			features.count());
-		predicition.segment(featureValues, out);
+		predicition2.segment(featureValues, out);
 	}
 
 	private void segmentGpu(RandomAccessible<?> image,
