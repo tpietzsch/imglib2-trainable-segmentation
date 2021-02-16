@@ -16,10 +16,14 @@ import net.imglib2.util.BenchmarkHelper;
 import net.imglib2.util.StopWatch;
 import net.imglib2.view.composite.Composite;
 
-public class RFPrediction_1
+public class RFPrediction_2
 {
 	// every entry is 2 floats: feature index, threshold
-	private final float[] dataTrees;
+//	private final float[] dataTrees;
+
+	// every entry is 2 floats: feature index, threshold
+	private final short[] attributes;
+	private final float[] thresholds;
 
 	// every entry is numClasses floats
 	private final float[] probabilities;
@@ -30,12 +34,14 @@ public class RFPrediction_1
 
 	private final int numClasses;
 
-	public RFPrediction_1( FastRandomForest classifier, int numberOfFeatures )
+	private int maxHeight;
+
+	public RFPrediction_2( FastRandomForest classifier, int numberOfFeatures )
 	{
 		this( new TransparentRandomForest( classifier ), numberOfFeatures );
 	}
 
-	public RFPrediction_1( final TransparentRandomForest forest, int numberOfFeatures )
+	public RFPrediction_2( final TransparentRandomForest forest, int numberOfFeatures )
 	{
 		numClasses = forest.numberOfClasses();
 		numTrees = forest.trees().size();
@@ -49,12 +55,13 @@ public class RFPrediction_1
 //			System.out.println( "trees with height " + i + ": " + treesByHeight.get( i ).size() );
 //		System.out.println();
 
-		final int maxHeight = heights.length == 0 ? 0 : heights[ heights.length - 1 ];
+		maxHeight = heights.length == 0 ? 0 : heights[ heights.length - 1 ];
 //		final int maxHeight = forest.trees().stream().mapToInt( TransparentRandomTree::height ).max().orElse( 0 );
 		final int maxLeafs = 1 << maxHeight;
 		final int maxNonLeafs = maxLeafs - 1;
 
-		dataTrees = new float[ 2 * maxNonLeafs * numTrees ];
+		attributes = new short[ maxNonLeafs * numTrees ];
+		thresholds = new float[ maxNonLeafs * numTrees ];
 		probabilities = new float[ numClasses * maxLeafs * numTrees ];
 
 		int iTree = 0;
@@ -126,56 +133,56 @@ public class RFPrediction_1
 			float[] instance,
 			float[] distribution )
 	{
-		final int maxDepth = 3; // TODO
-
-		Arrays.fill( distribution, 0 );
-//			for ( int tree = 0, n = numTrees; tree < n; tree++ )
-		for ( int tree = 0; tree < numTrees; ++tree )
-			addDistributionForTree( instance, tree, distribution, maxDepth );
-		ArrayUtils.normalize( distribution );
-	}
-
-	private void addDistributionForTree(
-			final float[] instance,
-			final int treeIndex,
-			final float[] distribution,
-			final int maxDepth )
-	{
+		final int maxDepth = maxHeight - 1;
 		final int maxLeafs = 2 << maxDepth;
 		final int maxNonLeafs = maxLeafs - 1;
-		final int dataBase = treeIndex * maxNonLeafs * 2;
-		final int probBase = treeIndex * maxLeafs * numClasses;
+		final int dataSize = maxNonLeafs;
+		final int probSize = maxLeafs * numClasses;
+		int dataBase = 0;
+		int probBase = 0;
 
-		int branchBits = 0;
-		for ( int nodeIndex = 0, depth = 0; depth <= maxDepth; ++depth )
+		Arrays.fill( distribution, 0 );
+		for ( int tree = 0, n = numTrees; tree < n; ++tree )
 		{
-			final int o = dataBase + nodeIndex * 2;
-			final int attributeIndex = ( int ) dataTrees[ o ];
-			if ( attributeIndex < 0 )
+			int branchBits = 0;
+			for ( int nodeIndex = 0, depth = 0; depth <= maxDepth; ++depth )
 			{
-				branchBits = branchBits << ( 1 + maxDepth - depth );
-				break;
+				final int o = dataBase + nodeIndex;
+				final int attributeIndex = attributes[ o ];
+				if ( attributeIndex < 0 )
+				{
+					branchBits = branchBits << ( 1 + maxDepth - depth );
+					break;
+				}
+				else
+				{
+					final float attributeValue = instance[ attributeIndex ];
+					final float threshold = thresholds[ o ];
+					nodeIndex = ( nodeIndex << 1 ) + 1;
+					branchBits = branchBits << 1;
+					if ( attributeValue >= threshold )
+					{
+						++nodeIndex;
+						++branchBits;
+					}
+				}
 			}
-			else
-			{
-				final float attributeValue = instance[ attributeIndex ];
-				final float threshold = dataTrees[ o + 1 ];
-				final int branch = attributeValue < threshold ? 0 : 1;
-				nodeIndex = ( nodeIndex << 1 ) + branch + 1;
-				branchBits = ( branchBits << 1 ) + branch;
-			}
-		}
 
-		final int o = probBase + branchBits * numClasses;
-		for ( int k = 0; k < numClasses; k++ )
-			distribution[ k ] += probabilities[ o + k ];
+			final int o = probBase + branchBits * numClasses;
+			for ( int k = 0; k < numClasses; ++k )
+				distribution[ k ] += probabilities[ k + o ];
+
+			dataBase += dataSize;
+			probBase += probSize;
+		}
+		ArrayUtils.normalize( distribution );
 	}
 
 	private void write( TransparentRandomTree node, final int treeIndex, final int nodeIndex, final int branchBits, final int depth, final int maxDepth )
 	{
 		final int maxLeafs = 2 << maxDepth;
 		final int maxNonLeafs = maxLeafs - 1;
-		final int dataBase = treeIndex * maxNonLeafs * 2;
+		final int dataBase = treeIndex * maxNonLeafs;
 		final int probBase = treeIndex * maxLeafs * numClasses;
 
 		if ( node.isLeaf() )
@@ -191,8 +198,8 @@ public class RFPrediction_1
 			if ( depth <= maxDepth )
 			{
 				// mark as leaf by setting feature index to -1 or something
-				final int o = dataBase + nodeIndex * 2;
-				dataTrees[ o ] = -1;
+				final int o = dataBase + nodeIndex;
+				attributes[ o ] = -1;
 				b = branchBits << ( 1 + maxDepth - depth );
 			}
 			else
@@ -216,9 +223,9 @@ public class RFPrediction_1
 //				node.smallerChild() TransparentRandomTree
 
 			// write feature index and threshold
-			final int o = dataBase + nodeIndex * 2;
-			dataTrees[ o ] = node.attributeIndex();
-			dataTrees[ o + 1 ] = ( float ) node.threshold();
+			final int o = dataBase + nodeIndex;
+			attributes[ o ] = ( short ) node.attributeIndex();
+			thresholds[ o ] = ( float ) node.threshold();
 
 			// recurse to children:
 			write( node.smallerChild(), treeIndex,

@@ -14,6 +14,7 @@ import net.imglib2.trainable_segmentation.classification.Segmenter;
 import net.imglib2.trainable_segmentation.classification.Trainer;
 import net.imglib2.trainable_segmentation.gpu.random_forest.RFAnalysis;
 import net.imglib2.trainable_segmentation.gpu.random_forest.RFPrediction_1;
+import net.imglib2.trainable_segmentation.gpu.random_forest.RFPrediction_2;
 import net.imglib2.trainable_segmentation.pixel_feature.filter.GroupedFeatures;
 import net.imglib2.trainable_segmentation.pixel_feature.settings.FeatureSettings;
 import net.imglib2.trainable_segmentation.pixel_feature.settings.GlobalSettings;
@@ -51,25 +52,36 @@ public class SegmentationPlayground
 		///
 
 		final ArrayImg< UnsignedByteType, ? > segmentation = ArrayImgs.unsignedBytes( Intervals.dimensionsAsLongArray( image ) );
-
-		System.out.println("-====================");
-		Parallelization.runSingleThreaded( () -> segmenter.segment( segmentation, Views.extendBorder( image ) ) );
-		System.out.println("-====================");
-
 		RandomAccessibleInterval<FloatType> featureValues = segmenter.features().apply( Views.extendBorder( image ), segmentation );
-//		final RFAnalysis.RFPrediction prediction = RFAnalysis.analyze(
+
+//		System.out.println("-============================");
+//		Parallelization.runSingleThreaded( () -> segmenter.segment( segmentation, Views.extendBorder( image ) ) );
+//		System.out.println("-=(Segmenter)================");
+//
+//		final RFPrediction_1 prediction1 = new RFPrediction_1(
 //				( FastRandomForest ) segmenter.getClassifier(),
 //				segmenter.features().count() );
-		final RFPrediction_1 prediction = new RFPrediction_1(
+//		Parallelization.runSingleThreaded( () -> prediction1.segment( featureValues, segmentation ) );
+//		System.out.println("-=RFPrediction_1=============");
+//
+//		final RFPrediction_2 prediction2 = new RFPrediction_2(
+//				( FastRandomForest ) segmenter.getClassifier(),
+//				segmenter.features().count() );
+//		Parallelization.runSingleThreaded( () -> prediction2.segment( featureValues, segmentation ) );
+//		System.out.println("-=RFPrediction_2=============");
+//
+		final RFAnalysis.RFPrediction prediction = RFAnalysis.analyze(
 				( FastRandomForest ) segmenter.getClassifier(),
 				segmenter.features().count() );
 		Parallelization.runSingleThreaded( () -> prediction.segment( featureValues, segmentation ) );
-		System.out.println("-====================");
-		BdvFunctions.show( segmentation, "segmentation" );
+		System.out.println("-==RFAnalysis.RFPrediction===");
 
-		///
+
+
+//		BdvFunctions.show( segmentation, "segmentation" );
 
 		System.out.println( "done" );
+		System.exit( 0 );
 	}
 
 	// -- Helper --
