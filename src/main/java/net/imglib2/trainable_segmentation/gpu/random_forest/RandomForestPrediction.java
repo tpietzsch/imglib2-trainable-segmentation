@@ -144,8 +144,8 @@ public class RandomForestPrediction {
 	public void segment(RandomAccessibleInterval<FloatType> featureStack,
 		RandomAccessibleInterval<? extends IntegerType<?>> out)
 	{
-		BenchmarkHelper.benchmarkAndPrint( 20, true, () -> {
-//			StopWatch watch = StopWatch.createAndStart();
+//		BenchmarkHelper.benchmarkAndPrint( 20, true, () -> {
+			StopWatch watch = StopWatch.createAndStart();
 			LoopBuilder.setImages(FastViews.collapse(featureStack), out).forEachChunk(chunk -> {
 				float[] features = new float[numberOfFeatures];
 				float[] probabilities = new float[numberOfClasses];
@@ -156,8 +156,8 @@ public class RandomForestPrediction {
 				});
 				return null;
 			});
-//			System.out.println("segment runtime " + watch);
-		} );
+			System.out.println("segment runtime " + watch);
+//		} );
 	}
 
 	/**

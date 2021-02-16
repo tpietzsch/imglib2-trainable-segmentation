@@ -1,6 +1,5 @@
 package net.imglib2.trainable_segmentation.gpu.random_forest;
 
-import Jama.Matrix;
 import hr.irb.fastRandomForest.FastRandomForest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -11,11 +10,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.trainable_segmentation.utils.views.FastViews;
 import net.imglib2.type.numeric.IntegerType;
-import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.util.BenchmarkHelper;
 import net.imglib2.util.StopWatch;
@@ -177,7 +174,7 @@ public class RFAnalysis
 		public void segment( RandomAccessibleInterval< FloatType > featureStack,
 				RandomAccessibleInterval<? extends IntegerType<?> > out)
 		{
-			BenchmarkHelper.benchmarkAndPrint( 10, false, () -> {
+			BenchmarkHelper.benchmarkAndPrint( 20, false, () -> {
 //				StopWatch watch = StopWatch.createAndStart();
 //				AtomicInteger ii = new AtomicInteger();
 				LoopBuilder.setImages( FastViews.collapse( featureStack ), out ).forEachChunk( chunk -> {
@@ -205,6 +202,15 @@ public class RFAnalysis
 				output[ i ] = input.get( i ).getRealFloat();
 		}
 
+		public void distributionForInstance_DUMMY(
+				float[] instance,
+				float[] distribution )
+		{
+			Arrays.fill( distribution, 0 );
+			distribution[ 0 ] = instance[ 0 ];
+			distribution[ 1 ] = instance[ 1 ];
+		}
+
 		/**
 		 * Applies the random forest to the given instance. Writes the class
 		 * probabilities to the parameter called distribution.
@@ -216,7 +222,26 @@ public class RFAnalysis
 		 * 		This is the output buffer, array length mush equal
 		 *        {@code numClasses}.
 		 */
+
 		public void distributionForInstance(
+				float[] instance,
+				float[] distribution )
+		{
+			switch ( numClasses )
+			{
+			case 2:
+				distributionForInstance_c2( instance, distribution );
+				break;
+			case 3:
+				distributionForInstance_c3( instance, distribution );
+				break;
+			default:
+				distributionForInstance_ck( instance, distribution );
+				break;
+			}
+		}
+
+		public void distributionForInstance_ck(
 				float[] instance,
 				float[] distribution )
 		{
@@ -236,13 +261,11 @@ public class RFAnalysis
 					final int probSize = 2 * numClasses;
 					for ( int tree = 0; tree < nh; ++tree )
 					{
-						addDistributionForTree_h1( instance, distribution, dataBase, probBase, numClasses );
-//						addDistributionForTree_h1( instance, distribution, dataBase + tree * dataSize, probBase + tree * probSize, numClasses );
+						final int branchBits = addDistributionForTree_h1( instance, dataBase );
+						acc( distribution, numClasses, probBase, branchBits );
 						dataBase += dataSize;
 						probBase += probSize;
 					}
-//					dataBase += nh * dataSize;
-//					probBase += nh * probSize;
 				}
 				else if ( depth == 1 ) // special case for trees of height 2
 				{
@@ -250,13 +273,11 @@ public class RFAnalysis
 					final int probSize = 4 * numClasses;
 					for ( int tree = 0; tree < nh; ++tree )
 					{
-						addDistributionForTree_h2( instance, distribution, dataBase, probBase, numClasses );
-//						addDistributionForTree_h2( instance, distribution, dataBase + tree * dataSize, probBase + tree * probSize, numClasses );
+						final int branchBits = addDistributionForTree_h2( instance, dataBase );
+						acc( distribution, numClasses, probBase, branchBits );
 						dataBase += dataSize;
 						probBase += probSize;
 					}
-//					dataBase += nh * dataSize;
-//					probBase += nh * probSize;
 				}
 				else // general case
 				{
@@ -266,25 +287,153 @@ public class RFAnalysis
 					final int probSize = numLeafs * numClasses;
 					for ( int tree = 0; tree < nh; ++tree )
 					{
-						addDistributionForTree( instance, distribution, dataBase, probBase, depth, numClasses );
-//						addDistributionForTree( instance, distribution, dataBase + tree * dataSize, probBase + tree * probSize, depth, numClasses );
+						final int branchBits = addDistributionForTree( instance, dataBase, depth );
+						acc( distribution, numClasses, probBase, branchBits );
 						dataBase += dataSize;
 						probBase += probSize;
 					}
-//					dataBase += nh * dataSize;
-//					probBase += nh * probSize;
 				}
 			}
 			ArrayUtils.normalize( distribution );
 		}
 
-		private void addDistributionForTree(
+		private void acc( final float[] distribution, final int numClasses, final int probBase, final int branchBits )
+		{
+			for ( int k = 0; k < numClasses; k++ )
+				distribution[ k ] += probabilities[ probBase + branchBits * numClasses + k ];
+		}
+
+
+		public void distributionForInstance_c2(
+				float[] instance,
+				float[] distribution )
+		{
+			float c0 = 0, c1 = 0;
+			final int numClasses = 2;
+			int dataBase = 0;
+			int probBase = 0;
+			for ( int depth = 0; depth < numTreesUpToHeight.length; depth++ )
+			{
+				final int nh = numTreesUpToHeight[ depth ];
+				if ( nh == 0 )
+					continue;
+
+				if ( depth == 0 ) // special case for trees of height 1
+				{
+					final int dataSize = 1;
+					final int probSize = 2 * numClasses;
+					for ( int tree = 0; tree < nh; ++tree )
+					{
+						final int branchBits = addDistributionForTree_h1( instance, dataBase );
+						c0 += probabilities[ probBase + branchBits * numClasses ];
+						c1 += probabilities[ probBase + branchBits * numClasses + 1 ];
+						dataBase += dataSize;
+						probBase += probSize;
+					}
+				}
+				else if ( depth == 1 ) // special case for trees of height 2
+				{
+					final int dataSize = 3;
+					final int probSize = 4 * numClasses;
+					for ( int tree = 0; tree < nh; ++tree )
+					{
+						final int branchBits = addDistributionForTree_h2( instance, dataBase );
+						c0 += probabilities[ probBase + branchBits * numClasses ];
+						c1 += probabilities[ probBase + branchBits * numClasses + 1 ];
+						dataBase += dataSize;
+						probBase += probSize;
+					}
+				}
+				else // general case
+				{
+					final int numLeafs = 2 << depth;
+					final int numNonLeafs = numLeafs - 1;
+					final int dataSize = numNonLeafs;
+					final int probSize = numLeafs * numClasses;
+					for ( int tree = 0; tree < nh; ++tree )
+					{
+						final int branchBits = addDistributionForTree( instance, dataBase, depth );
+						c0 += probabilities[ probBase + branchBits * numClasses ];
+						c1 += probabilities[ probBase + branchBits * numClasses + 1 ];
+						dataBase += dataSize;
+						probBase += probSize;
+					}
+				}
+			}
+			final float invsum = 1f / ( c0 + c1 );
+			distribution[ 0 ] = c0 * invsum;
+			distribution[ 1 ] = c1 * invsum;
+		}
+
+		public void distributionForInstance_c3(
+				float[] instance,
+				float[] distribution )
+		{
+			float c0 = 0, c1 = 0, c2 = 0;
+			final int numClasses = 3;
+			int dataBase = 0;
+			int probBase = 0;
+			for ( int depth = 0; depth < numTreesUpToHeight.length; depth++ )
+			{
+				final int nh = numTreesUpToHeight[ depth ];
+				if ( nh == 0 )
+					continue;
+
+				if ( depth == 0 ) // special case for trees of height 1
+				{
+					final int dataSize = 1;
+					final int probSize = 2 * numClasses;
+					for ( int tree = 0; tree < nh; ++tree )
+					{
+						final int branchBits = addDistributionForTree_h1( instance, dataBase );
+						c0 += probabilities[ probBase + branchBits * numClasses ];
+						c1 += probabilities[ probBase + branchBits * numClasses + 1 ];
+						c2 += probabilities[ probBase + branchBits * numClasses + 2 ];
+						dataBase += dataSize;
+						probBase += probSize;
+					}
+				}
+				else if ( depth == 1 ) // special case for trees of height 2
+				{
+					final int dataSize = 3;
+					final int probSize = 4 * numClasses;
+					for ( int tree = 0; tree < nh; ++tree )
+					{
+						final int branchBits = addDistributionForTree_h2( instance, dataBase );
+						c0 += probabilities[ probBase + branchBits * numClasses ];
+						c1 += probabilities[ probBase + branchBits * numClasses + 1 ];
+						c2 += probabilities[ probBase + branchBits * numClasses + 2 ];
+						dataBase += dataSize;
+						probBase += probSize;
+					}
+				}
+				else // general case
+				{
+					final int numLeafs = 2 << depth;
+					final int numNonLeafs = numLeafs - 1;
+					final int dataSize = numNonLeafs;
+					final int probSize = numLeafs * numClasses;
+					for ( int tree = 0; tree < nh; ++tree )
+					{
+						final int branchBits = addDistributionForTree( instance, dataBase, depth );
+						c0 += probabilities[ probBase + branchBits * numClasses ];
+						c1 += probabilities[ probBase + branchBits * numClasses + 1 ];
+						c2 += probabilities[ probBase + branchBits * numClasses + 2 ];
+						dataBase += dataSize;
+						probBase += probSize;
+					}
+				}
+			}
+			final float norm = 1f / ( c0 + c1 + c2 );
+			distribution[ 0 ] = c0 * norm;
+			distribution[ 1 ] = c1 * norm;
+			distribution[ 2 ] = c2 * norm;
+		}
+
+		private int addDistributionForTree(
 				final float[] instance,
-				final float[] distribution,
 				final int dataBase,
-				final int probBase,
-				final int maxDepth,
-				final int numClasses )
+				final int maxDepth )
 		{
 			int branchBits = 0;
 			for ( int nodeIndex = 0, depth = 0; depth <= maxDepth; ++depth )
@@ -305,38 +454,23 @@ public class RFAnalysis
 					branchBits = ( branchBits << 1 ) + branch;
 				}
 			}
-
-			final int o = probBase + branchBits * numClasses;
-			for ( int k = 0; k < numClasses; k++ )
-				distribution[ k ] += probabilities[ o + k ];
-//			distribution[ 0 ] += probabilities[ o ];
-//			distribution[ 1 ] += probabilities[ o + 1 ];
+			return branchBits;
 		}
 
-		private void addDistributionForTree_h1(
+		private int addDistributionForTree_h1(
 				final float[] instance,
-				final float[] distribution,
-				final int dataBase,
-				final int probBase,
-				final int numClasses )
+				final int dataBase )
 		{
 			final int attributeIndex = attributes[ dataBase ];
 			final float attributeValue = instance[ attributeIndex ];
 			final float threshold = thresholds[ dataBase ];
 			final int branchBits = attributeValue < threshold ? 0 : 1;
-			final int o = probBase + branchBits * numClasses;
-			for ( int k = 0; k < numClasses; k++ )
-				distribution[ k ] += probabilities[ o + k ];
-//			distribution[ 0 ] += probabilities[ o ];
-//			distribution[ 1 ] += probabilities[ o + 1 ];
+			return branchBits;
 		}
 
-		private void addDistributionForTree_h2(
+		private int addDistributionForTree_h2(
 				final float[] instance,
-				final float[] distribution,
-				final int dataBase,
-				final int probBase,
-				final int numClasses )
+				final int dataBase )
 		{
 			final int attributeIndex0 = attributes[ dataBase ];
 			final float attributeValue0 = instance[ attributeIndex0 ];
@@ -352,12 +486,7 @@ public class RFAnalysis
 				if ( attributeValue1 >= threshold1 )
 					branchBits += 1;
 			}
-
-			final int o = probBase + branchBits * numClasses;
-			for ( int k = 0; k < numClasses; k++ )
-				distribution[ k ] += probabilities[ o + k ];
-//			distribution[ 0 ] += probabilities[ o ];
-//			distribution[ 1 ] += probabilities[ o + 1 ];
+			return branchBits;
 		}
 
 		private void write( TransparentRandomTree node, final int nodeIndex, final int branchBits, final int depth, final int maxDepth, final int treeDataBase, final int treeProbBase )
