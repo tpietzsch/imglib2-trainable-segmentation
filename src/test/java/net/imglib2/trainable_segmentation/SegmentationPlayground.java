@@ -64,12 +64,12 @@ public class SegmentationPlayground
 //		Parallelization.runSingleThreaded( () -> prediction1.segment( featureValues, segmentation ) );
 //		System.out.println("-=RFPrediction_1=============");
 //
-		final RFPrediction_2 prediction2 = new RFPrediction_2(
-				( FastRandomForest ) segmenter.getClassifier(),
-				segmenter.features().count() );
-		Parallelization.runSingleThreaded( () -> prediction2.segment( featureValues, segmentation ) );
-		System.out.println("-=RFPrediction_2=============");
-
+//		final RFPrediction_2 prediction2 = new RFPrediction_2(
+//				( FastRandomForest ) segmenter.getClassifier(),
+//				segmenter.features().count() );
+//		Parallelization.runSingleThreaded( () -> prediction2.segment( featureValues, segmentation ) );
+//		System.out.println("-=RFPrediction_2=============");
+//
 		final RFAnalysis.RFPrediction prediction = RFAnalysis.analyze(
 				( FastRandomForest ) segmenter.getClassifier(),
 				segmenter.features().count() );

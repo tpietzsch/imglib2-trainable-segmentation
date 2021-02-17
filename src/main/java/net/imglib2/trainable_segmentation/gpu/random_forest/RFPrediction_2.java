@@ -90,26 +90,26 @@ public class RFPrediction_2
 	public void segment( RandomAccessibleInterval< FloatType > featureStack,
 			RandomAccessibleInterval< ? extends IntegerType< ? > > out )
 	{
-		BenchmarkHelper.benchmarkAndPrint( 20, true, () -> {
-//			StopWatch watch = StopWatch.createAndStart();
-//			AtomicInteger ii = new AtomicInteger();
+//		BenchmarkHelper.benchmarkAndPrint( 20, true, () -> {
+			StopWatch watch = StopWatch.createAndStart();
+			AtomicInteger ii = new AtomicInteger();
 			LoopBuilder.setImages( FastViews.collapse( featureStack ), out ).forEachChunk( chunk -> {
 				float[] features = new float[ numFeatures ];
 				float[] probabilities = new float[ numClasses ];
 				chunk.forEachPixel( ( featureVector, classIndex ) -> {
 					copyFromTo( featureVector, features );
 					distributionForInstance( features, probabilities );
-//					final int i = ii.getAndIncrement();
-//					if ( i < 3 )
-//					{
-//						System.out.println( "i = " + i + ": " + Arrays.toString( probabilities ) + " : " + Arrays.toString( features ) );
-//					}
+					final int i = ii.getAndIncrement();
+					if ( i < 3 )
+					{
+						System.out.println( "i = " + i + ": " + Arrays.toString( probabilities ) + " : " + Arrays.toString( features ) );
+					}
 					classIndex.setInteger( ArrayUtils.findMax( probabilities ) );
 				} );
 				return null;
 			} );
-//			System.out.println( "(t) segment runtime " + watch );
-		} );
+			System.out.println( "(t) segment runtime " + watch );
+//		} );
 	}
 
 	private static void copyFromTo( final Composite< FloatType > input, final float[] output )

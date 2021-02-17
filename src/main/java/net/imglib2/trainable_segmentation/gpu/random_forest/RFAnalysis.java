@@ -14,6 +14,7 @@ import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.trainable_segmentation.utils.views.FastViews;
 import net.imglib2.type.numeric.IntegerType;
 import net.imglib2.type.numeric.real.FloatType;
+import net.imglib2.util.BenchmarkHelper;
 import net.imglib2.util.StopWatch;
 import net.imglib2.view.composite.Composite;
 import preview.net.imglib2.loops.LoopBuilder;
@@ -119,6 +120,10 @@ public class RFAnalysis
 			for ( TransparentRandomTree tree : forest.trees() )
 				treesByHeight.computeIfAbsent( tree.height(), ArrayList::new ).add( tree );
 			final int[] heights = treesByHeight.keySet().stream().mapToInt( Integer::intValue ).sorted().toArray();
+			System.out.println( "numTrees = " + numTrees );
+			for ( int i : heights )
+				System.out.println( "  trees with height " + i + ": " + treesByHeight.get( i ).size() );
+			System.out.println();
 
 			final int maxHeight = heights.length == 0 ? 0 : heights[ heights.length - 1 ];
 			numTreesUpToHeight = new int[ maxHeight ];
@@ -177,7 +182,6 @@ public class RFAnalysis
 					chunk.forEachPixel( ( featureVector, classIndex ) -> {
 						copyFromTo( featureVector, features );
 						distributionForInstance( features, probabilities );
-//						distributionForInstance_DUMMY( features, probabilities );
 //						final int i = ii.getAndIncrement();
 //						if ( i < 3 )
 //						{
@@ -195,18 +199,6 @@ public class RFAnalysis
 		{
 			for ( int i = 0, len = output.length; i < len; i++ )
 				output[ i ] = input.get( i ).getRealFloat();
-		}
-
-		public void distributionForInstance_DUMMY(
-				float[] instance,
-				float[] distribution )
-		{
-			Arrays.fill( distribution, 0 );
-			for ( int i = 0; i < numFeatures; i+=2 )
-				distribution[ 0 ] += instance[ i ];
-			for ( int i = 1; i < numFeatures; i+=2 )
-				distribution[ 1 ] += instance[ i ];
-			ArrayUtils.normalize( distribution );
 		}
 
 		/**
@@ -277,6 +269,18 @@ public class RFAnalysis
 						probBase += probSize;
 					}
 				}
+				else if ( depth == 2 ) // special case for trees of height 3
+				{
+					final int dataSize = 7;
+					final int probSize = 8 * numClasses;
+					for ( int tree = 0; tree < nh; ++tree )
+					{
+						final int branchBits = addDistributionForTree_h3( instance, dataBase );
+						acc( distribution, numClasses, probBase, branchBits );
+						dataBase += dataSize;
+						probBase += probSize;
+					}
+				}
 				else // general case
 				{
 					final int numLeafs = 2 << depth;
@@ -341,6 +345,19 @@ public class RFAnalysis
 						probBase += probSize;
 					}
 				}
+				else if ( depth == 2 ) // special case for trees of height 3
+				{
+					final int dataSize = 7;
+					final int probSize = 8 * numClasses;
+					for ( int tree = 0; tree < nh; ++tree )
+					{
+						final int branchBits = addDistributionForTree_h3( instance, dataBase );
+						c0 += probabilities[ probBase + branchBits * numClasses ];
+						c1 += probabilities[ probBase + branchBits * numClasses + 1 ];
+						dataBase += dataSize;
+						probBase += probSize;
+					}
+				}
 				else // general case
 				{
 					final int numLeafs = 2 << depth;
@@ -360,6 +377,16 @@ public class RFAnalysis
 			final float invsum = 1f / ( c0 + c1 );
 			distribution[ 0 ] = c0 * invsum;
 			distribution[ 1 ] = c1 * invsum;
+		}
+
+		private static long median( final ArrayList< Long > values )
+		{
+			if ( values.size() % 2 == 1 )
+				return values.get( ( values.size() + 1 ) / 2 - 1 );
+			final long lower = values.get( values.size() / 2 - 1 );
+			final long upper = values.get( values.size() / 2 );
+
+			return ( lower + upper ) / 2;
 		}
 
 		public void distributionForInstance_c3(
@@ -397,6 +424,20 @@ public class RFAnalysis
 					for ( int tree = 0; tree < nh; ++tree )
 					{
 						final int branchBits = addDistributionForTree_h2( instance, dataBase );
+						c0 += probabilities[ probBase + branchBits * numClasses ];
+						c1 += probabilities[ probBase + branchBits * numClasses + 1 ];
+						c2 += probabilities[ probBase + branchBits * numClasses + 2 ];
+						dataBase += dataSize;
+						probBase += probSize;
+					}
+				}
+				else if ( depth == 2 ) // special case for trees of height 3
+				{
+					final int dataSize = 7;
+					final int probSize = 8 * numClasses;
+					for ( int tree = 0; tree < nh; ++tree )
+					{
+						final int branchBits = addDistributionForTree_h3( instance, dataBase );
 						c0 += probabilities[ probBase + branchBits * numClasses ];
 						c1 += probabilities[ probBase + branchBits * numClasses + 1 ];
 						c2 += probabilities[ probBase + branchBits * numClasses + 2 ];
@@ -473,16 +514,78 @@ public class RFAnalysis
 			final float attributeValue0 = instance[ attributeIndex0 ];
 			final float threshold0 = thresholds[ dataBase ];
 
-			int branchBits = ( attributeValue0 < threshold0 ) ? 0 : 2;
-			final int dataBase1 = dataBase + ( ( attributeValue0 < threshold0 ) ? 1 : 2 );
-			final int attributeIndex1 = attributes[ dataBase1 ];
-			if ( attributeIndex1 >= 0 )
+			int branchBits;
+			int o;
+			if ( attributeValue0 < threshold0 )
 			{
-				final float attributeValue1 = instance[ attributeIndex1 ];
-				final float threshold1 = thresholds[ dataBase1 ];
-				if ( attributeValue1 >= threshold1 )
-					branchBits += 1;
+				branchBits = 0;
+				o = 1;
 			}
+			else
+			{
+				branchBits = 2;
+				o = 2;
+			}
+			final int dataBase1 = dataBase + o;
+
+			final int attributeIndex1 = attributes[ dataBase1 ];
+			if ( attributeIndex1 < 0 )
+				return branchBits;
+			final float attributeValue1 = instance[ attributeIndex1 ];
+			final float threshold1 = thresholds[ dataBase1 ];
+			if ( attributeValue1 >= threshold1 )
+				branchBits += 1;
+
+			return branchBits;
+		}
+
+		private int addDistributionForTree_h3(
+				final float[] instance,
+				final int dataBase )
+		{
+			final int attributeIndex0 = attributes[ dataBase ];
+			final float attributeValue0 = instance[ attributeIndex0 ];
+			final float threshold0 = thresholds[ dataBase ];
+
+			int branchBits;
+			int o;
+			if ( attributeValue0 < threshold0 )
+			{
+				branchBits = 0;
+				o = 1;
+			}
+			else
+			{
+				branchBits = 4;
+				o = 2;
+			}
+			final int dataBase1 = dataBase + o;
+
+			final int attributeIndex1 = attributes[ dataBase1 ];
+			if ( attributeIndex1 < 0 )
+				return branchBits;
+			final float attributeValue1 = instance[ attributeIndex1 ];
+			final float threshold1 = thresholds[ dataBase1 ];
+			if ( attributeValue1 < threshold1 )
+			{
+				o = o * 2 + 1;
+			}
+			else
+			{
+				o = o * 2 + 2;
+				branchBits += 2;
+			}
+			final int dataBase2 = dataBase + o;
+
+			final int attributeIndex2 = attributes[ dataBase2 ];
+			if ( attributeIndex2 < 0 )
+				return branchBits;
+			final float attributeValue2 = instance[ attributeIndex2 ];
+			final float threshold2 = thresholds[ dataBase2 ];
+
+			if ( attributeValue2 >= threshold2 )
+				branchBits += 1;
+
 			return branchBits;
 		}
 
