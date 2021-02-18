@@ -7,13 +7,14 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import net.imglib2.Cursor;
 import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.trainable_segmentation.utils.views.FastViews;
 import net.imglib2.type.numeric.IntegerType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.util.BenchmarkHelper;
+import net.imglib2.view.Views;
 import net.imglib2.view.composite.Composite;
-import preview.net.imglib2.loops.LoopBuilder;
 
 public class RFPrediction
 {
@@ -642,21 +643,22 @@ public class RFPrediction
 		BenchmarkHelper.benchmarkAndPrint( 20, false, () -> {
 //			StopWatch watch = StopWatch.createAndStart();
 //			AtomicInteger ii = new AtomicInteger();
-			LoopBuilder.setImages( FastViews.collapse( featureStack ), out ).forEachChunk( chunk -> {
+
+				final Cursor< Composite< FloatType > > f = Views.flatIterable( FastViews.collapse( featureStack ) ).cursor();
+				final Cursor< ? extends IntegerType< ? > > c = Views.flatIterable( out ).cursor();
 				float[] features = new float[ numFeatures ];
 				float[] probabilities = new float[ numClasses ];
-				chunk.forEachPixel( ( featureVector, classIndex ) -> {
-					copyFromTo( featureVector, features );
+				while ( c.hasNext() )
+				{
+					copyFromTo( f.next(), features );
 					distributionForInstance( features, probabilities );
 //					final int i = ii.getAndIncrement();
 //					if ( i < 3 )
 //					{
 //						System.out.println( "i = " + i + ": " + Arrays.toString( probabilities ) + " : " + Arrays.toString( features ) );
 //					}
-					classIndex.setInteger( ArrayUtils.findMax( probabilities ) );
-				} );
-				return null;
-			} );
+					c.next().setInteger( ArrayUtils.findMax( probabilities ) );
+				}
 //			System.out.println( "(t) segment runtime " + watch );
 		} );
 	}
