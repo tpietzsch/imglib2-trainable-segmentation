@@ -1,7 +1,6 @@
 
 package net.imglib2.trainable_segmentation;
 
-import bdv.util.BdvFunctions;
 import hr.irb.fastRandomForest.FastRandomForest;
 import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.img.Img;
@@ -13,8 +12,7 @@ import net.imglib2.roi.labeling.LabelingType;
 import net.imglib2.trainable_segmentation.classification.Segmenter;
 import net.imglib2.trainable_segmentation.classification.Trainer;
 import net.imglib2.trainable_segmentation.gpu.random_forest.RFAnalysis;
-import net.imglib2.trainable_segmentation.gpu.random_forest.RFPrediction_1;
-import net.imglib2.trainable_segmentation.gpu.random_forest.RFPrediction_2;
+import net.imglib2.trainable_segmentation.gpu.random_forest.RFPrediction;
 import net.imglib2.trainable_segmentation.pixel_feature.filter.GroupedFeatures;
 import net.imglib2.trainable_segmentation.pixel_feature.settings.FeatureSettings;
 import net.imglib2.trainable_segmentation.pixel_feature.settings.GlobalSettings;
@@ -70,7 +68,7 @@ public class SegmentationPlayground
 //		Parallelization.runSingleThreaded( () -> prediction2.segment( featureValues, segmentation ) );
 //		System.out.println("-=RFPrediction_2=============");
 //
-		final RFAnalysis.RFPrediction prediction = RFAnalysis.analyze(
+		final RFPrediction prediction = RFAnalysis.analyze(
 				( FastRandomForest ) segmenter.getClassifier(),
 				segmenter.features().count() );
 		Parallelization.runSingleThreaded( () -> prediction.segment( featureValues, segmentation ) );

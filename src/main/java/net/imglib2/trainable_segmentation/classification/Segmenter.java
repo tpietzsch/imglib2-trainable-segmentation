@@ -13,7 +13,7 @@ import net.imglib2.*;
 import net.imglib2.img.array.ArrayImgFactory;
 import net.imglib2.trainable_segmentation.gpu.api.GpuCopy;
 import net.imglib2.trainable_segmentation.gpu.api.GpuPool;
-import net.imglib2.trainable_segmentation.gpu.random_forest.RFAnalysis;
+import net.imglib2.trainable_segmentation.gpu.random_forest.RFPrediction;
 import net.imglib2.trainable_segmentation.gpu.random_forest.RandomForestPrediction;
 import net.imglib2.trainable_segmentation.pixel_feature.calculator.FeatureCalculator;
 import net.imglib2.trainable_segmentation.pixel_feature.settings.FeatureSettings;
@@ -49,7 +49,7 @@ public class Segmenter {
 	private final weka.classifiers.Classifier classifier;
 
 	private RandomForestPrediction predicition;
-	private RFAnalysis.RFPrediction predicition2;
+	private RFPrediction predicition2;
 
 	private boolean useGpu = false;
 
@@ -60,7 +60,7 @@ public class Segmenter {
 		this.features = Objects.requireNonNull(features);
 		this.classifier = Objects.requireNonNull(classifier);
 		this.predicition = new RandomForestPrediction( Cast.unchecked( classifier ), features.count() );
-		this.predicition2 = new RFAnalysis.RFPrediction( ( FastRandomForest ) classifier, features.count() );
+		this.predicition2 = new RFPrediction( ( FastRandomForest ) classifier, features.count() );
 	}
 
 	public Segmenter(Context context, List<String> classNames, FeatureSettings features,
@@ -236,7 +236,7 @@ public class Segmenter {
 		public void train() {
 			RevampUtils.wrapException(() -> classifier.buildClassifier(instances));
 			predicition = new RandomForestPrediction( ( FastRandomForest ) classifier, features.count() );
-			predicition2 = new RFAnalysis.RFPrediction( ( FastRandomForest ) classifier, features.count() );
+			predicition2 = new RFPrediction( ( FastRandomForest ) classifier, features.count() );
 		}
 	}
 
