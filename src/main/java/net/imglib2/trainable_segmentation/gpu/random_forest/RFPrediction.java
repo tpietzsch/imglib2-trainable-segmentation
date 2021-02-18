@@ -1,12 +1,12 @@
 package net.imglib2.trainable_segmentation.gpu.random_forest;
 
-import hr.irb.fastRandomForest.FastRandomForest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
 import net.imglib2.Cursor;
 import net.imglib2.RandomAccessibleInterval;
 import net.imglib2.trainable_segmentation.utils.views.FastViews;
@@ -15,6 +15,8 @@ import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.util.BenchmarkHelper;
 import net.imglib2.view.Views;
 import net.imglib2.view.composite.Composite;
+
+import hr.irb.fastRandomForest.FastRandomForest;
 
 public class RFPrediction
 {
@@ -68,18 +70,18 @@ public class RFPrediction
 	 */
 	private final int[] numTreesOfHeight;
 
-	public RFPrediction( FastRandomForest classifier, int numberOfFeatures )
+	public RFPrediction( final FastRandomForest classifier, final int numberOfFeatures )
 	{
 		this( new TransparentRandomForest( classifier ), numberOfFeatures );
 	}
 
-	public RFPrediction( final TransparentRandomForest forest, int numberOfFeatures )
+	public RFPrediction( final TransparentRandomForest forest, final int numberOfFeatures )
 	{
 		numClasses = forest.numberOfClasses();
 		numFeatures = numberOfFeatures;
 
 		final Map< Integer, List< TransparentRandomTree > > treesByHeight = new HashMap<>();
-		for ( TransparentRandomTree tree : forest.trees() )
+		for ( final TransparentRandomTree tree : forest.trees() )
 			treesByHeight.computeIfAbsent( tree.height(), ArrayList::new ).add( tree );
 		final int[] heights = treesByHeight.keySet().stream().mapToInt( Integer::intValue ).sorted().toArray();
 
@@ -102,7 +104,7 @@ public class RFPrediction
 
 		int dataBase = 0;
 		int probBase = 0;
-		for ( int height : heights )
+		for ( final int height : heights )
 		{
 			final int depth = height - 1;
 			final int numLeafs = 2 << depth;
@@ -110,7 +112,7 @@ public class RFPrediction
 			final int dataSize = numNonLeafs;
 			final int probSize = numLeafs * numClasses;
 			final List< TransparentRandomTree > trees = treesByHeight.get( height );
-			for ( TransparentRandomTree tree : trees )
+			for ( final TransparentRandomTree tree : trees )
 			{
 				write( tree, 0, 0, 0, height - 1, dataBase, probBase );
 				dataBase += dataSize;
@@ -120,24 +122,28 @@ public class RFPrediction
 	}
 
 	/**
-	 * Serialize a node into the attributes, thresholds, and probabilities arrays.
+	 * Serialize a node into the attributes, thresholds, and probabilities
+	 * arrays.
 	 *
 	 * @param node
-	 * 		a tree node.
+	 *     a tree node.
 	 * @param nodeIndex
-	 * 		flattened index of {@code node}.
-	 * 		(Children of node i are at 2*i+1 and 2*i+2).
+	 *     flattened index of {@code node}. (Children of node i are at 2*i+1 and
+	 *     2*i+2).
 	 * @param branchBits
-	 * 		path through the tree to this node.
-	 * 		(The {@depth} least significant bits are the branches, e.g., "010" says: from the root go left, then right, then left.)
+	 *     path through the tree to this node. (The {@depth} least significant
+	 *     bits are the branches, e.g., "010" says: from the root go left, then
+	 *     right, then left.)
 	 * @param depth
-	 * 		depth of {@code node}.
+	 *     depth of {@code node}.
 	 * @param maxDepth
-	 * 		maximum depth of any node in the current tree (the tree that {@code node} belongs to).
+	 *     maximum depth of any node in the current tree (the tree that
+	 *     {@code node} belongs to).
 	 * @param treeDataBase
-	 * 		offset into attributes[], thresholds[] where the current tree is placed.
+	 *     offset into attributes[], thresholds[] where the current tree is
+	 *     placed.
 	 * @param treeProbBase
-	 * 		offset into probabilities[] where the current tree is placed.
+	 *     offset into probabilities[] where the current tree is placed.
 	 */
 	private void write(
 			final TransparentRandomTree node,
@@ -179,16 +185,16 @@ public class RFPrediction
 
 	/**
 	 * Applies the random forest to the given instance. Writes the class
-	 * probabilities to {@code distribution}.
-	 * depending on the number of classes, this calls
-	 * {@link #distributionForInstance_c2} (for 2 classes),
+	 * probabilities to {@code distribution}. depending on the number of
+	 * classes, this calls {@link #distributionForInstance_c2} (for 2 classes),
 	 * {@link #distributionForInstance_c3} (for 3 classes), or
 	 * {@link #distributionForInstance_ck} (for {@code >3} classes).
 	 *
 	 * @param instance
-	 * 		Instance / feature vector, array length must equal {@code numberOfFeatures}.
+	 *     Instance / feature vector, array length must equal
+	 *     {@code numberOfFeatures}.
 	 * @param distribution
-	 * 		This is the output buffer, array length must equal number of classes.
+	 *     This is the output buffer, array length must equal number of classes.
 	 */
 	void distributionForInstance( final float[] instance, final float[] distribution )
 	{
@@ -285,9 +291,7 @@ public class RFPrediction
 	 * Applies the random forest to the given instance.
 	 * This implements the general case for 2 classes.
 	 */
-	public void distributionForInstance_c2(
-			float[] instance,
-			float[] distribution )
+	private void distributionForInstance_c2( final float[] instance, final float[] distribution )
 	{
 		float c0 = 0, c1 = 0;
 		final int numClasses = 2;
@@ -362,9 +366,7 @@ public class RFPrediction
 	 * Applies the random forest to the given instance.
 	 * This implements the general case for 3 classes.
 	 */
-	public void distributionForInstance_c3(
-			float[] instance,
-			float[] distribution )
+	private void distributionForInstance_c3( final float[] instance, final float[] distribution )
 	{
 		float c0 = 0, c1 = 0, c2 = 0;
 		final int numClasses = 3;
@@ -589,15 +591,17 @@ public class RFPrediction
 	}
 
 	/**
-	 * For reference (unused): distributionForInstance() without considering any special cases.
+	 * For reference (unused): distributionForInstance() without considering any
+	 * special cases.
 	 * <p>
 	 * Applies the random forest to the given instance. Writes the class
 	 * probabilities to {@code distribution}.
 	 *
 	 * @param instance
-	 * 		Instance / feature vector, array length must equal {@code numberOfFeatures}.
+	 *     Instance / feature vector, array length must equal
+	 *     {@code numberOfFeatures}.
 	 * @param distribution
-	 * 		This is the output buffer, array length must equal number of classes.
+	 *     This is the output buffer, array length must equal number of classes.
 	 */
 	private void generic_distributionForInstance( final float[] instance, final float[] distribution )
 	{
@@ -637,8 +641,8 @@ public class RFPrediction
 
 
 	// TODO: will go away --> RandomForestPrediction
-	public void segment( RandomAccessibleInterval< FloatType > featureStack,
-			RandomAccessibleInterval< ? extends IntegerType< ? > > out )
+	public void segment( final RandomAccessibleInterval< FloatType > featureStack,
+			final RandomAccessibleInterval< ? extends IntegerType< ? > > out )
 	{
 		BenchmarkHelper.benchmarkAndPrint( 20, false, () -> {
 //			StopWatch watch = StopWatch.createAndStart();
@@ -646,8 +650,8 @@ public class RFPrediction
 
 				final Cursor< Composite< FloatType > > f = Views.flatIterable( FastViews.collapse( featureStack ) ).cursor();
 				final Cursor< ? extends IntegerType< ? > > c = Views.flatIterable( out ).cursor();
-				float[] features = new float[ numFeatures ];
-				float[] probabilities = new float[ numClasses ];
+				final float[] features = new float[ numFeatures ];
+				final float[] probabilities = new float[ numClasses ];
 				while ( c.hasNext() )
 				{
 					copyFromTo( f.next(), features );
